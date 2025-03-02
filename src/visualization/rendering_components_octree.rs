@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 use std::net::UdpSocket;
 use bevy::ecs::query;
-use bevy::prelude::*;
+use bevy::{gizmos, prelude::*};
 use bevy::state::commands;
 use bevy_flycam::prelude::*;
 use bevy::color::palettes::css::GOLD;
@@ -13,7 +13,7 @@ use crate::data_reader::data_reader;
 use crate::data_reader::io;
 use crate::visualization::color_calculator;
 use crate::octree::{self, octree::*, creat_octree};
-use crate::calculator::crash_detector;
+use crate::calculator::{crash_detector, mavlink_args}; 
 use crate::calculator::coordinate_switch::{frd_to_bevy, mid360_to_bevy};
 //use crate::data_reader::structor::LaserPoint;
 
@@ -40,6 +40,9 @@ struct FrameIntegrationTime(pub u64);
 
 #[derive(Component)]
 struct OctreeEntity;
+
+#[derive(Resource)]
+pub struct VelocityVector(pub Vec3);
 
 pub fn run_bevy() {
     // let boundary = io::read_with_default(
@@ -84,6 +87,7 @@ pub fn run_bevy() {
             sensitivity: 0.00009,
             speed: 3.0,
         })
+        .insert_resource(VelocityVector(Vec3::ZERO))
         //.insert_resource(octree)
         .add_systems(Startup,
             |commands: Commands,
@@ -109,8 +113,10 @@ pub fn run_bevy() {
             |commands: Commands,
             meshes: ResMut<Assets<Mesh>>,
             materials: ResMut<Assets<StandardMaterial>>,
-            query: Query<'_, '_, Entity, With<OctreeEntity>>   |
-            octree_update_system(commands, meshes, materials, query))
+            velocity: ResMut<VelocityVector>,
+            query: Query<'_, '_, Entity, With<OctreeEntity>>|
+            octree_update_system(commands, meshes, materials, velocity, query))
+        .add_systems(Update, draw_gizmos)
         .run();
 }
 
@@ -128,9 +134,9 @@ fn setup_bevy(
     // let voxel_size = voxel_size.0;
     // let frame_integration_time = frame_integration_time.0;
     let boundary = 10.0;
-    let max_depth = 6;
+    let max_depth = 7;
     let voxel_size = 0.08;
-    let frame_integration_time = 150;
+    let frame_integration_time = 100;
     let mut octree = creat_octree::creat_octree_from_udp(boundary, max_depth, voxel_size, frame_integration_time);
     octree.optimize();
     let leaves = octree.octree_to_map();
@@ -177,8 +183,8 @@ fn setup_bevy(
     // Add a camera at [0, 0, 2] and look at front
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 2.0, 0.0).looking_at(Vec3::ZERO, Vec3::X),
-        FlyCam,
+        Transform::from_xyz(0., 1.5, 4.).looking_at(Vec3::ZERO, Vec3::Y),
+        //FlyCam,
     ));
 
     // Add a red sphere to represent the drone at [0, 0, 0]
@@ -240,15 +246,17 @@ fn octree_update_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut velocity: ResMut<VelocityVector>,
     query: Query<Entity, With<OctreeEntity>>,
 ) {
     for entity in query.iter() {
         commands.entity(entity).despawn();
     }
     let boundary = 10.0;
-    let max_depth = 6;
+    let max_depth = 7;
     let voxel_size = 0.08;
-    let frame_integration_time = 150;
+    let frame_integration_time = 100;
+    let warn_trigger_distance = 0.5;
     let mut octree = creat_octree::creat_octree_from_udp(boundary, max_depth, voxel_size, frame_integration_time);
 
     octree.optimize();
@@ -282,6 +290,38 @@ fn octree_update_system(
             }
         }
     };
+
+    // Crash detection
+    let tup_obstacle_result = crash_detector::crash_warn_for_octree(&octree, warn_trigger_distance);
+    //println!("Crash Warning: {}", tup_obstacle_result.0);
+    let mavlink_message = crash_detector::obstacle_avoidance(&tup_obstacle_result.1, warn_trigger_distance);
+    velocity.0 = match mavlink_message.type_mask {
+        0b0000001000000000 => {
+            let (x, y, z) = frd_to_bevy(mavlink_message.vx, mavlink_message.vy, mavlink_message.vz);
+            Vec3::new(x, y, z)
+        }
+        
+        _ => Vec3::ZERO,
+    };
+}
+
+fn draw_gizmos(
+    mut gizmos: Gizmos,
+    velocity: Res<VelocityVector>,
+) {
+    use std::f32::consts::PI;
+    gizmos.line(
+        Vec3::ZERO,
+        velocity.0,
+        Color::srgb_u8(255, 0, 0),
+    );
+    gizmos.grid(
+        Quat::from_rotation_x(PI / 2.),
+        UVec2::splat(20),
+        Vec2::new(2., 2.),
+        // Light gray
+        LinearRgba::gray(0.65),
+    );
 }
 
 fn get_size(boundary: f32, max_depth: u32) -> f32 {

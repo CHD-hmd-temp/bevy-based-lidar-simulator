@@ -118,7 +118,6 @@ pub fn read_udp_packets(socket: &UdpSocket, duration: u64) -> std::io::Result<Ve
                 eprintln!("Error receiving UDP packet: {}", e);
                 continue;
             }
-            
         }
     }
 }

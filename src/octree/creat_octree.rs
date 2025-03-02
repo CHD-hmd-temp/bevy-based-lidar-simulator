@@ -13,16 +13,14 @@ pub fn creat_octree_from_udp(boundary: f32, max_depth: u32, voxel_size: f32, fra
 
     let mut octree = Octree::new([[-boundary; 3], [boundary; 3]]);
     if max_depth < 1 {
-        println!("Max depth must be greater than 0, use default.");
         max_depth = 6;
     }
-    println!("Inserting points into octree...");
+
     for point in points {
         let point_coordinate = [point.x, point.y, point.z];
         let point_reflectivity = point.reflectivity;
         octree.insert(point_coordinate, max_depth, point_reflectivity).unwrap();
     }
-    println!("Points inserted into octree.");
 
     octree
 }

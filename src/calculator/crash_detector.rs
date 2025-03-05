@@ -44,7 +44,7 @@ pub fn crash_warn_for_octree(
             let y = point.y;
             let z = point.z;
             let distance = distance_calculator([x, y, z], [0.0, 0.0, 0.0]);
-            if distance < warn_trigger_distance {
+            if distance < warn_trigger_distance * 3.0 {
                 result = true;
                 obstacle_list.push((distance, [x, y, z]));
             }
@@ -54,13 +54,14 @@ pub fn crash_warn_for_octree(
 }
 
 // TODO: implement speed_factor
+/// Return velocity vector to avoid obstacles
 pub fn obstacle_avoidance(
     obstacle_list: &Vec<(f32, [f32; 3])>,
-    _warn_trigger_distance: f32,
+    warn_trigger_distance: f32,
     //mavlink_args: &MavlinkArgs,
 ) -> MavlinkArgs {
     const EPSILON: f32 = 1e-6;
-    const MAX_SPEED: f32 = 2.0;
+    const MAX_SPEED: f32 = 1.0;
     let mut result = MavlinkArgs::new(
         0,
         1,
@@ -84,17 +85,18 @@ pub fn obstacle_avoidance(
     }
     let mut sorted_obstacle_list = obstacle_list.clone();
     sorted_obstacle_list.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    if sorted_obstacle_list[0].0 > warn_trigger_distance {
+        return result;
+    }
     let (mut sum_x, mut sum_y, mut sum_z) = (0.0, 0.0, 0.0);
     for &(distance, [x, y, z]) in &sorted_obstacle_list {
-        let weight = 1.0 / (distance.powi(2) + EPSILON);
+        let weight = 1.0 / (distance.powi(3) + EPSILON);
         sum_x += -x * weight;
         sum_y += -y * weight;
-        sum_z += -z * weight;
+         sum_z += -z * weight;
     }
 
     let _minimum_distance = sorted_obstacle_list[0].0;
-    // let speed_factor = (1.0 - (warn_trigger_distance / minimum_distance)).clamp(0.0, 1.0);
-    // let speed = MAX_SPEED * speed_factor;
     let speed = MAX_SPEED;
 
     let magnitude = (sum_x.powi(2) + sum_y.powi(2) + sum_z.powi(2)).sqrt();
@@ -130,35 +132,3 @@ pub fn obstacle_avoidance(
         return result;
     }
 }
-
-// fn flu_to_frd(mavlink_msg: &MavlinkArgs) -> MavlinkArgs {
-//     let mut result = MavlinkArgs::new(
-//         mavlink_msg.time_boot_ms,
-//         mavlink_msg.target_system,
-//         mavlink_msg.target_component,
-//         mavlink_msg.coordinate_frame,
-//         mavlink_msg.type_mask,
-//         mavlink_msg.x,
-//         mavlink_msg.y,
-//         mavlink_msg.z,
-//         mavlink_msg.vx,
-//         mavlink_msg.vy,
-//         mavlink_msg.vz,
-//         mavlink_msg.afx,
-//         mavlink_msg.afy,
-//         mavlink_msg.afz,
-//         mavlink_msg.yaw,
-//         mavlink_msg.yaw_rate,
-//     );
-//     let vx = mavlink_msg.vx;
-//     let vy = mavlink_msg.vy;
-//     let vz = mavlink_msg.vz;
-//     let yaw = mavlink_msg.yaw;
-//     let yaw_rate = mavlink_msg.yaw_rate;
-//     result.vx = vx * yaw.cos() - vy * yaw.sin();
-//     result.vy = vx * yaw.sin() + vy * yaw.cos();
-//     result.vz = vz;
-//     result.yaw = yaw;
-//     result.yaw_rate = yaw_rate;
-//     return result;
-// }

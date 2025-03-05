@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use std::io::{Cursor, Error, ErrorKind};
 use crate::data_reader::structor::LaserPoint;
 
-fn parse_udp_packet(data: &[u8]) -> Result<Vec<LaserPoint>, Error> {
+fn parse_udp_packet_laserpoint(data: &[u8]) -> Result<Vec<LaserPoint>, Error> {
     const HEADER_SIZE: usize = 36;
     const POINT_SIZE: usize = 14;
 
@@ -82,7 +82,7 @@ fn parse_udp_packet(data: &[u8]) -> Result<Vec<LaserPoint>, Error> {
     Ok(points)
 }
 
-pub fn read_udp_packets(socket: &UdpSocket, duration: u64) -> std::io::Result<Vec<LaserPoint>> {
+pub fn read_udp_packets_laserpoint(socket: &UdpSocket, duration: u64) -> std::io::Result<Vec<LaserPoint>> {
     // let socket = UdpSocket::bind("0.0.0.0:56301")?;
     // println!("Listening for UDP data on port 56301..");
 
@@ -96,7 +96,7 @@ pub fn read_udp_packets(socket: &UdpSocket, duration: u64) -> std::io::Result<Ve
             Ok((size, _addr)) => {
                 data_buffer.extend_from_slice(&buf[..size]);
 
-                match parse_udp_packet(&data_buffer) {
+                match parse_udp_packet_laserpoint(&data_buffer) {
                     Ok(points) => {
                         //println!("Received {} points", points.len());
                         data_string.extend(points);

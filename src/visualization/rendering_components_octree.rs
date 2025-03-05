@@ -51,7 +51,7 @@ pub fn run_bevy() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "WorldWithoutMortis".into(),
+                title: "WorldWithoutAnime".into(),
                 ..default()
             }),
             ..default()
@@ -203,6 +203,18 @@ fn setup_bevy(
             TextSpan::default(),
             TextColor(GOLD.into()),
             FpsText,
+        ));
+    
+    // Text on the top left corner
+    commands
+        .spawn((
+            Text::new("v1.3-Saki"),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(12.0),
+                left: Val::Px(12.0),
+                ..default()
+            },
         ));
 }
 

@@ -10,7 +10,7 @@ use bevy_flycam::prelude::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, DiagnosticsStore};
 use crate::data_reader::structor::{ LaserPoint, Point3};
-use crate::data_reader::udp_reader;
+use crate::data_reader::udp_reader::{self, ImuData};
 use crate::data_reader::data_reader;
 use crate::data_reader::io;
 use crate::visualization::color_calculator;
@@ -75,6 +75,25 @@ pub fn run_bevy() {
             epsilon: 0.1,
             max_steps: 500,
             step_size: 0.1,
+        })
+        .insert_resource(ImuData {
+            version: 0,
+            length: 0,
+            time_interval: 0,
+            dot_num: 0,
+            udp_cnt: 0,
+            frame_cnt: 0,
+            data_type: 0,
+            time_type: 0,
+            reserved: Vec::new(),
+            crc32: 0,
+            timestamp: 0,
+            gyro_x: 0.0,
+            gyro_y: 0.0,
+            gyro_z: 0.0,
+            acc_x: 0.0,
+            acc_y: 0.0,
+            acc_z: 0.0,
         })
         .insert_resource(VelocityVector(Vec3::ZERO))
         .insert_resource(Path(Vec::new()))

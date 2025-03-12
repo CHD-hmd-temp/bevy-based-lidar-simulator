@@ -2,4 +2,4 @@ pub mod udp_reader;
 pub mod structor;
 pub mod structor_to_file;
 pub mod io;
-pub mod data_reader;
+pub mod sensor_detect;

@@ -4,6 +4,15 @@ mod visualization;
 mod calculator;
 
 fn main() {
+    if !data_reader::sensor_detect::is_imu_sensor_online() || !data_reader::sensor_detect::is_lidar_online() {
+        panic!("Sensors are not online");
+    }    
+
+    visualization::rendering_components_octree::run_bevy();   
+}
+
+#[allow(dead_code)]
+fn async_main() {
     // 创建 Tokio 运行时
     let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -12,7 +21,8 @@ fn main() {
         let imu_socket = tokio::net::UdpSocket::bind("0.0.0.0:56401")
             .await
             .expect("Port bind failed");
-        data_reader::udp_reader::read_imu(&imu_socket).await.unwrap();
+        data_reader::udp_reader::read_imu_async(&imu_socket).await.unwrap();
+        
     });
     // 在主线程运行 Bevy
     visualization::rendering_components_octree::run_bevy();

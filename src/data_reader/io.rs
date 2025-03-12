@@ -1,5 +1,4 @@
 #![allow(unused)]
-
 use std::io;
 use std::io::BufRead;
 

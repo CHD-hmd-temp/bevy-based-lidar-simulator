@@ -1,12 +1,7 @@
 #![allow(dead_code)]
-#![allow(unused_imports)]
-use std::collections::HashMap;
 use bevy::ecs::system::Resource;
-
 use crate::octree::octree::Octree;
-use crate::data_reader::structor::{ LaserPoint, Point3 };
-use crate::calculator::mavlink_args::MavlinkArgs;
-use crate::calculator::coordinate_switch::mid360_to_frd;
+use crate::data_reader::structor::Point3;
 
 #[derive(Debug, Resource)]
 pub struct ApfConfig {

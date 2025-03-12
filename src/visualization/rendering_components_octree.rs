@@ -1,25 +1,18 @@
 #![allow(dead_code)]
-#![allow(unused_imports)]
-use std::net::UdpSocket;
-use std::path;
-use std::io::Write;
-use bevy::ecs::query;
-use bevy::{gizmos, prelude::*};
-use bevy::state::commands;
+use bevy::prelude::*;
 use bevy_flycam::prelude::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, DiagnosticsStore};
-use crate::data_reader::structor::{ LaserPoint, Point3};
+use crate::calculator::point_divider;
+use crate::data_reader::structor::Point3;
 use crate::data_reader::udp_reader::{self, ImuData};
-use crate::data_reader::data_reader;
-use crate::data_reader::io;
 use crate::visualization::color_calculator;
-use crate::octree::{self, octree::*, creat_octree};
-use crate::calculator::{crash_detector, mavlink_args}; 
-use crate::calculator::coordinate_switch::{frd_to_bevy, mid360_to_bevy};
+use crate::octree::creat_octree;
+use crate::calculator::coordinate_switch::mid360_to_bevy;
 use crate::calculator::apf;
 use crate::calculator::apf::ApfConfig;
-//use crate::data_reader::structor::LaserPoint;
+use crate::data_reader::io;
+use std::net::UdpSocket;
 
 #[derive(Component)]
 struct Ground;
@@ -29,6 +22,12 @@ struct FpsText;
 
 #[derive(Component)]
 struct OctreeEntity;
+
+#[derive(Component)]
+struct IMUEntityAcc;
+
+#[derive(Component)]
+struct IMUEntityGyro;
 
 #[derive(Resource)]
 struct FrameIntegrationTime(pub u64);
@@ -44,10 +43,15 @@ pub struct OctreeConfig {
     boundary: f32,
     max_depth: u32,
     voxel_size: f32,
-    frame_integration_time: u64,
+    frame_integration_time: u32,
 }
 
 pub fn run_bevy() {
+    //let boundary: f32 = io::read_with_default("boundary:", 10.0, None);
+    let boundary: f32 = 10.0;
+    let max_depth: u32 = io::read_with_default("max_depth:", 7, None);
+    let voxel_size: f32 = io::read_with_default("voxel_size:", 0.08, None);
+    let frame_integration_time: u32 = io::read_with_default("frame_integration_time:", 100, None);
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -63,10 +67,10 @@ pub fn run_bevy() {
             speed: 3.0,
         })
         .insert_resource(OctreeConfig {
-            boundary: 10.0,
-            max_depth: 7,
-            voxel_size: 0.08,
-            frame_integration_time: 100,
+            boundary,
+            max_depth,
+            voxel_size,
+            frame_integration_time,
         })
         .insert_resource(ApfConfig {
             k_att: 2.5,
@@ -111,6 +115,7 @@ pub fn run_bevy() {
             );
         })
         .add_systems(Update, text_update_system)
+        .add_systems(Update, update_imu)
         .add_systems(Update,
             |commands: Commands,
             meshes: ResMut<Assets<Mesh>>,
@@ -149,7 +154,7 @@ fn setup_bevy(
     let leaves = octree.octree_to_map();
 
     for (depth, group) in leaves {
-        let grouped_pixel_points = data_reader::divide_points(group);
+        let grouped_pixel_points = point_divider::divide_points(group);
         let cube_mesh = meshes.add(Mesh::from(
             Cuboid::new(
                 get_size(boundary, depth),
@@ -196,17 +201,6 @@ fn setup_bevy(
         Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
     )); 
 
-    // plane
-    // commands.spawn((
-    //     Mesh3d(meshes.add(Plane3d::default().mesh().size(20., 20.))),
-    //     MeshMaterial3d(materials.add(StandardMaterial {
-    //         base_color: Color::srgba(1.0, 1.0, 1.0, 0.5), // White with 50% transparency
-    //         alpha_mode: AlphaMode::Blend, // Enables transparency blending
-    //         ..Default::default()
-    //     })),
-    //     Ground,
-    // ));
-
     // Text with multiple sections
     commands
         .spawn((
@@ -235,6 +229,46 @@ fn setup_bevy(
                 ..default()
             },
         ));
+
+    // text shows IMU data
+    commands
+        .spawn((
+            Text::new("IMU: "),
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(48.0),
+                left: Val::Px(12.0),
+                ..default()
+            },
+        ))
+        .with_children(
+            |parent| {
+                parent.spawn((
+                    Text::new("Gyro: "),
+                    IMUEntityGyro,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        bottom: Val::Px(52.0),
+                        left: Val::Px(0.0),
+                        width: Val::Px(500.0),
+                        ..default()
+                    },
+                    //TextColor(GOLD.into()),
+                ));
+                parent.spawn((
+                    Text::new("Acc: "),
+                    IMUEntityAcc,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        bottom: Val::Px(0.0),
+                        left: Val::Px(0.0),
+                        width: Val::Px(500.0),
+                        ..default()
+                    },
+                    //TextColor(GOLD.into()),
+                ));
+            }
+        );
 }
 
 fn text_update_system(
@@ -274,7 +308,7 @@ fn octree_update_system(
 
     let leaves = octree.octree_to_map();
     for (depth, group) in leaves {
-        let grouped_pixel_points = data_reader::divide_points(group);
+        let grouped_pixel_points = point_divider::divide_points(group);
         let cube_mesh = meshes.add(Mesh::from(
             Cuboid::new(
                 get_size(10.0, depth),
@@ -329,17 +363,6 @@ fn octree_update_system(
     };
     path.0 = vec;
 
-    // Crash detection
-    // let tup_obstacle_result = crash_detector::crash_warn_for_octree(&octree, warn_trigger_distance);
-    // let mavlink_message = crash_detector::obstacle_avoidance(&tup_obstacle_result.1, warn_trigger_distance);
-    // velocity.0 = match mavlink_message.type_mask {
-    //     0b0000001000000000 => {
-    //         let (x, y, z) = frd_to_bevy(mavlink_message.vx, mavlink_message.vy, mavlink_message.vz);
-    //         Vec3::new(x, y, z)
-    //     }
-    //     _ => Vec3::ZERO,
-    // };
-
     velocity.0 = Vec3::ZERO;
 }
 
@@ -359,7 +382,7 @@ fn draw_gizmos(
         UVec2::splat(20),
         Vec2::new(2., 2.),
         // Light gray
-        LinearRgba::gray(0.65),
+        LinearRgba::gray(0.35),
     );
     if path.0.len() > 1 {
         for i in 0..path.0.len() - 1 {
@@ -380,4 +403,22 @@ fn get_size(boundary: f32, max_depth: u32) -> f32 {
         size /= 2.0;
     }
     size
+}
+
+fn update_imu(
+    mut param_set: ParamSet<(
+        Query<&mut Text, With<IMUEntityGyro>>,
+        Query<&mut Text, With<IMUEntityAcc>>,
+    )>,
+) {
+    let socket_imu = UdpSocket::bind("0.0.0.0:56401").expect("Port bind failed");
+    let imu_data = udp_reader::read_imu(&socket_imu).unwrap();
+
+    for mut text in param_set.p0().iter_mut() {
+        **text = format!("Gyro: Rad/s\nx:{:6.2}, y:{:6.2}, Z:{:6.2}", imu_data.gyro_x, imu_data.gyro_y, imu_data.gyro_z);
+    }
+
+    for mut text in param_set.p1().iter_mut() {
+        **text = format!("Acc: m/s^2\nx:{:6.2}, y:{:6.2}, z:{:6.2}", imu_data.acc_x * 9.8, imu_data.acc_y * 9.8, imu_data.acc_z * 9.8);
+    }
 }

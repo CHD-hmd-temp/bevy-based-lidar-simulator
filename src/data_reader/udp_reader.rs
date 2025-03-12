@@ -26,7 +26,7 @@ pub struct ImuData {
     pub acc_z: f32,
 }
 
-#[derive(Debug, Resource)]
+#[derive(Debug)]
 pub struct LaserData {
     pub version: u8,
     pub length: u16,
@@ -42,7 +42,7 @@ pub struct LaserData {
     pub points: Vec<LaserPoint>,
 }
 
-fn parse_laserpoint(data: &[u8]) -> Result<LaserData, Error> {
+pub fn parse_laserpoint(data: &[u8]) -> Result<LaserData, Error> {
     const HEADER_SIZE: usize = 36;
     const POINT_SIZE: usize = 14;
 
@@ -134,7 +134,7 @@ fn parse_laserpoint(data: &[u8]) -> Result<LaserData, Error> {
     Ok(laser_data)
 }
 
-pub fn read_laserpoint(socket: &std::net::UdpSocket, duration: u64) -> std::io::Result<Vec<LaserPoint>> {
+pub fn read_laserpoint(socket: &std::net::UdpSocket, duration: u32) -> std::io::Result<Vec<LaserPoint>> {
     // let socket = UdpSocket::bind("0.0.0.0:56301")?;
     // println!("Listening for UDP data on port 56301..");
 
@@ -158,7 +158,7 @@ pub fn read_laserpoint(socket: &std::net::UdpSocket, duration: u64) -> std::io::
                 }
                 data_buffer.clear();
 
-                if start_time.elapsed() > Duration::from_millis(duration) {
+                if start_time.elapsed() > Duration::from_millis(duration as u64) {
 
                     return Ok(data_string);
                 }
@@ -171,7 +171,7 @@ pub fn read_laserpoint(socket: &std::net::UdpSocket, duration: u64) -> std::io::
     }
 }
 
-fn parse_imu_data(data: &[u8]) -> Option<ImuData> {
+pub fn parse_imu(data: &[u8]) -> Option<ImuData> {
     if data.len() < 24 {
         return None;
     }
@@ -221,7 +221,9 @@ fn parse_imu_data(data: &[u8]) -> Option<ImuData> {
     }
 }
 
-pub async fn read_imu(socket: &tokio::net::UdpSocket) -> std::io::Result<()> {
+/// Test: Asynchronous UDP reader for IMU data
+/// Not stable!
+pub async fn read_imu_async(socket: &tokio::net::UdpSocket) -> std::io::Result<()> {
     let mut buf = [0; 2048];
     
     loop {
@@ -230,12 +232,40 @@ pub async fn read_imu(socket: &tokio::net::UdpSocket) -> std::io::Result<()> {
         let packet = &buf[..size];
         
         // 直接解析当前数据包
-        if let Some(_data) = parse_imu_data(packet) {
+        if let Some(_data) = parse_imu(packet) {
             continue;
             //println!("{:#?}", data);
             //println!("gyro_x: {}, gyro_y: {}, gyro_z: {}", data.gyro_x, data.gyro_y, data.gyro_z);
         } else {
             eprintln!("Failed to parse packet");
+        }
+    }
+}
+
+pub fn read_imu(
+    socket: &std::net::UdpSocket,
+) -> std::io::Result<ImuData> {
+    let mut buf = [0; 2048];
+    let mut data_buffer = Vec::new();
+
+    loop {
+        match socket.recv_from(&mut buf) {
+            Ok((size, _addr)) => {
+                data_buffer.extend_from_slice(&buf[..size]);
+
+                match parse_imu(&data_buffer) {
+                    Some(imu_data) => {
+                        return Ok(imu_data);
+                    }
+                    None => {
+                        eprintln!("Failed to parse packet");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error receiving UDP packet: {}", e);
+                continue;
+            }
         }
     }
 }
